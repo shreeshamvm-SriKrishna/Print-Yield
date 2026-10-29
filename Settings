@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root{--ink:#1b2430;--muted:#5f6b63;--rule:#d9ddd6;--soft:#f3f5f1;--rev:#1e3a5f;--neg:#a53a2f}
+  *{box-sizing:border-box}
+  body{margin:0;font:13px/1.45 "Segoe UI",system-ui,Roboto,Arial,sans-serif;color:var(--ink);background:#fff;padding:14px 16px 90px}
+  h1{font-size:16px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:12px;margin:0 0 14px}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:20px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--rule)}
+  label{display:block;font-size:12px;color:var(--muted);margin:10px 0 3px}
+  input[type=text],select,textarea{width:100%;padding:7px 8px;border:1px solid var(--rule);border-radius:6px;font:inherit;color:inherit;background:#fff}
+  textarea{font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;min-height:120px;resize:vertical}
+  input:focus,select:focus{outline:2px solid var(--rev);outline-offset:1px;border-color:var(--rev)}
+  .hint{font-size:11px;color:var(--muted);margin-top:3px}
+  table{width:100%;border-collapse:collapse;margin-top:6px}
+  td,th{padding:5px 4px;border-bottom:1px solid var(--soft);font-size:12px;text-align:left}
+  th{color:var(--muted);font-weight:500}
+  td input,td select{padding:5px 6px}
+  .row{display:flex;gap:8px;align-items:center}
+  .toggle{display:flex;align-items:center;gap:8px;margin-top:10px}
+  .toggle input{width:16px;height:16px}
+  .bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--rule);padding:10px 16px;display:flex;gap:8px;align-items:center}
+  button{font:inherit;border-radius:6px;padding:8px 12px;cursor:pointer;border:1px solid var(--rule);background:#fff;color:var(--ink)}
+  button.primary{background:var(--rev);border-color:var(--rev);color:#fff}
+  button:disabled{opacity:.5;cursor:default}
+  .status{font-size:12px;color:var(--muted);margin-left:auto}
+  .status.err{color:var(--neg)}
+  .empty{font-size:12px;color:var(--muted);padding:8px;background:var(--soft);border-radius:6px}
+  .add{font-size:12px;color:var(--rev);background:none;border:0;padding:4px 0;cursor:pointer}
+  .ess{background:var(--soft);border:1px solid var(--rule);border-radius:8px;padding:4px 12px 12px;margin-bottom:14px}
+  .ess h2{margin-top:10px;border:0;color:var(--rev)}
+  details.adv{border-top:1px solid var(--rule);padding:4px 0 8px}
+  details.adv summary{cursor:pointer;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:8px 0;list-style:none;display:flex;justify-content:space-between}
+  details.adv summary::-webkit-details-marker{display:none}
+  details.adv summary::after{content:"+";font-size:14px;color:var(--rev)}
+  details.adv[open] summary::after{content:"−"}
+</style>
+</head>
+<body>
+  <h1>Settings</h1>
+  <p class="sub" id="subtitle">Fill in the Essentials; everything else has a working default and sits under the + sections.</p>
+  <div id="form">Loading…</div>
+
+  <div class="bar">
+    <button id="save">Save</button>
+    <button id="apply" class="primary">Save &amp; apply now</button>
+    <span class="status" id="status"></span>
+  </div>
+
+<script>
+const CURRENCIES = ['EUR','GBP','USD','CHF','SEK','NOK','DKK','PLN','CZK','HUF','JPY','CNY','INR','AUD','CAD','MXN','BRL','AED','SGD','HKD','TWD','KRW','ZAR'];
+let S = null;
+
+function opt(list, cur) { return list.map(c => `<option value="${c}"${c===cur?' selected':''}>${c}</option>`).join(''); }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function render(s) {
+  S = s;
+  const inFile = Array.from(new Set([s.reportingCurrency, ...(s.dataCurrencies || []), ...s.regions.map(r => r.currency).filter(Boolean), ...s.fx.map(x => x.code)]));
+  const curList = Array.from(new Set([...inFile, ...CURRENCIES]));
+  document.getElementById('subtitle').textContent = `${s.profileTitle || 'Report'} — fill in the Essentials; everything else has a working default and sits under the + sections.`;
+  const isPrint = s.profile === 'print';
+  document.getElementById('form').innerHTML = `
+    <div class="ess">
+    <h2>Essentials — the only settings most reports need</h2>
+    <label>Reporting currency (base for all consolidated views)</label>
+    <select id="reportingCurrency">${opt(curList, s.reportingCurrency)}</select>
+    <div class="hint">Currencies found in the file: ${inFile.map(esc).join(', ')}. Changing the base re-bases the exchange-rate matrix automatically.</div>
+    <div class="hint">All figures are shown in this currency. Rows without a currency are assumed to be in it.</div>
+    <label>Company name shown on the web page and exports</label>
+    <input type="text" id="brandName" value="${esc(s.brandName || '')}" placeholder="e.g. Your Media Group">
+    ${isPrint ? `<label>Credit line (under the title on the web page, Dashboard and Excel)</label>
+    <input type="text" id="creditLine" value="${esc(s.creditLine || '')}" placeholder="Built by …">` : ''}
+    ${isPrint ? `
+    <label>IO Status scope — web app, Sheets tabs and Excel</label>
+    <select id="defaultIoStatus"><option value="">— all IO statuses —</option>${Array.from(new Set([s.defaultIoStatus, ...(s.ioStatuses || [])].filter(Boolean))).map(x => `<option value="${esc(x)}"${x === s.defaultIoStatus ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select>
+    <div class="hint">One scope everywhere, so the Dashboard card, the market tabs and the web headline show the same number. Web viewers can still switch to any status. Blank = all. Applies on the next rebuild.</div>
+    <label>Yield basis shown by default</label>
+    <select id="yieldBasis">
+      <option value="gross"${s.yieldBasis !== 'ratecard' ? ' selected' : ''}>Net ÷ Gross (tier price, before discounts &amp; commission) — recommended</option>
+      <option value="ratecard"${s.yieldBasis === 'ratecard' ? ' selected' : ''}>Net ÷ Rate card (list price)</option>
+    </select>
+    <div class="hint">The web app has a dropdown to switch; the Google Sheets tabs and the Excel default use this one.</div>
+    ` : ''}
+    <label>Who can open the web app (emails, comma-separated; blank = anyone in the domain)</label>
+    <input type="text" id="reviewers" value="${esc(s.reviewers)}">
+    <div class="hint">Save, then re-import once (Print Yield → Process pasted report) so the data and the web page pick the settings up.</div>
+    </div>
+    <details class="adv"><summary>Report profile</summary>
+    <label>Profile</label>
+    <select id="profileSetting">
+      <option value=""${!s.profileSetting ? ' selected' : ''}>Code default (${esc(s.defaultProfile)})</option>
+      <option value="talent"${s.profileSetting === 'talent' ? ' selected' : ''}>talent — Talent Revenue Review</option>
+      <option value="print"${s.profileSetting === 'print' ? ' selected' : ''}>print — Print Yield Review</option>
+    </select>
+    <div class="hint">Active: <b>${esc(s.profile)}</b>. The profile decides the headline KPI, the derived columns and the web-app layout. Changing it needs a re-import (Import latest / Process Raw).</div>
+    </details>
+    ${isPrint ? `
+    <details class="adv"><summary>Print yield rules — page factors, categories, gross definition</summary>
+    <div class="toggle"><input type="checkbox" id="grossIncludesCommission"${s.grossIncludesCommission ? ' checked' : ''}><label style="margin:0;color:var(--ink)">Gross earned includes agency commission</label></div>
+    <div class="hint">Gross is read per drop from AdBook's "(Drop) Rate Card Pricing" text: AdjustedRateCard + contract (Tier 2) + client (Tier 3/4) + commission (Tier 99). On: commission counts as lost yield. Off: commission is cost of sale and sits between list price and gross.</div>
+    <label>Rate card tiers that are pricing policy, not negotiation</label>
+    <input type="text" id="policyTiers" value="${esc(s.policyTiers || '0, 5')}" placeholder="0, 5">
+    <div class="hint">These tiers (rate-card adjustments, Special) sit between the list price and gross and never count against yield. Applied at the next import.</div>
+    <label>Agency commission column is (only used for drops whose text carries no rate card)</label>
+    <select id="commissionMode"><option value="amount"${s.commissionMode !== 'percent' ? ' selected' : ''}>an amount (e.g. 10,604.34)</option><option value="percent"${s.commissionMode === 'percent' ? ' selected' : ''}>a percentage (e.g. 15)</option></select>
+    <div class="toggle"><input type="checkbox" id="houseExclude"${s.houseExclude ? ' checked' : ''}><label style="margin:0;color:var(--ink)">Exclude house ads from yield and revenue per page</label></div>
+    <div class="toggle"><input type="checkbox" id="regionalProrata"${s.regionalProrata ? ' checked' : ''}><label style="margin:0;color:var(--ink)">Count regional split-run pages pro-rata (a "50 Percent" DPS = 1 page)</label></div>
+    <label>Page factors per Print Ad Size (Size=pages; …)</label>
+    <textarea id="pageFactors">${esc(s.pageFactors || '')}</textarea>
+    <div class="hint">Sizes ending in " - 1st/2nd/…" use the base size. Gatefolds take (Drop) Actual Space when it is 2, 4 or 6. Unknown sizes fall back to Actual Space (≤ 8) and are flagged in the Import Log.</div>
+    <label>Insert ad sizes (comma-separated)</label>
+    <input type="text" id="insertSizes" value="${esc(s.insertSizes || '')}">
+    <div class="hint">Counted as inserts (0 pages, reported separately). Lines in the *Inserts book are inserts regardless of size.</div>
+    <label>Page category groups — one per line: Group = regex (case-insensitive, matched against Path 5)</label>
+    <textarea id="pageCatGroups" style="min-height:190px">${esc(s.pageCatGroups || '')}</textarea>
+    <div class="hint">First matching rule wins; blank Path 5 → Standard; no match → "Unclassified" (listed in the Import Log so you can add a rule). Insert and House Ad are decided before these rules.</div>
+    <label>Commercial-term values in Path 5 (regex → shown as Standard placement, kept in "Commercial Term")</label>
+    <input type="text" id="termPattern" value="${esc(s.termPattern || '')}">
+    <label>Brand family overrides (optional, one per line: Family = regex on Parent Site / Brand)</label>
+    <textarea id="brandFamilies" rows="3" placeholder="Traveller = traveller|traveler">${esc(s.brandFamilies || '')}</textarea>
+    <div class="hint">By default the family is the text after the market prefix in AdBook's Parent Site ("ME - Vogue" → Vogue). Add a line only to merge or rename a title. Applied at the next import; the Import Log lists the families found.</div>
+    <label>Discount depth bands — upper limits in % (negotiated discount = 1 − net ÷ gross)</label>
+    <input type="text" id="discountBands" value="${esc(s.discountBands || '25, 50, 70')}" placeholder="25, 50, 70">
+    <div class="hint">Default gives 0–25 / 25–50 / 50–70 / 70 %+. Applied at the next import.</div>
+    </details>
+    ` : ''}
+    <details class="adv"><summary>Currencies &amp; exchange rates (only for mixed-currency exports)</summary>
+    <label>Market currencies</label>
+    ${s.hasData ? `<table><thead><tr><th>Region</th><th style="width:120px">Report in</th></tr></thead><tbody>
+      ${s.regions.map((r, i) => `<tr><td>${esc(r.name)}</td><td><select data-region="${esc(r.name)}">${opt(['— same as reporting —', ...curList], r.currency || '— same as reporting —')}</select></td></tr>`).join('')}
+    </tbody></table>` : `<div class="empty">Regions appear here after the first import.</div>`}
+    <div class="hint">Pick GBP for the UK, for example — that market's tab, file and web-app view will report in GBP.</div>
+
+    <label>Exchange rates — Source → Target, as in AdBook</label>
+    <table id="fx"><thead><tr><th>1 unit of</th><th style="width:150px">= ? ${esc(s.reportingCurrency)}</th></tr></thead><tbody>
+      ${s.fx.map(x => `<tr><td><input type="text" value="${esc(x.code)}" data-fxcode style="width:80px"></td><td><input type="text" value="${esc(x.rate)}" data-fxrate></td></tr>`).join('')}
+    </tbody></table>
+    <button class="add" id="addFx">+ add currency</button>
+    <div class="hint">Enter AdBook's rate as-is: Source GBP → Target ${esc(s.reportingCurrency)} = 1.1647 means 1 GBP = 1.1647 ${esc(s.reportingCurrency)}. The reverse rates and the full matrix are computed in the FX Rates tab.</div>
+    </details>
+    <details class="adv"><summary>Google Sheets tabs — years &amp; charts</summary>
+    <label>Year(s) to report</label>
+    <input type="text" id="sheetYears" value="${esc(s.sheetYears || '')}" placeholder="blank = all years">
+    <div class="hint">Years in the data: ${(s.yearsInData || []).join(', ') || '—'}. Enter e.g. <b>2026</b> to build every sheet tab, market file and deck for 2026 only, or <b>2026, 2027</b> for both. The web app has its own Year filter and always keeps all years.</div>
+
+    <label>Charts in Google Sheets</label>
+    <select id="charts">
+      <option value="dashboard"${(s.charts||'dashboard')==='dashboard'?' selected':''}>Dashboard tab only (fast — recommended)</option>
+      <option value="all"${s.charts==='all'?' selected':''}>All tabs and market files (slow)</option>
+      <option value="none"${s.charts==='none'?' selected':''}>None (tables only)</option>
+    </select>
+    <div class="hint">Each chart is a slow operation; the web app and the deck carry the visuals regardless.</div>
+    </details>
+    ${isPrint ? '' : `
+    <details class="adv"><summary>US market</summary>
+    <label>Position Path first segment that means the US market</label>
+    <input type="text" id="usPrefix" value="${esc(s.usPrefix || 'Conde Nast')}" placeholder="Conde Nast">
+    <label>Name shown for the US market</label>
+    <input type="text" id="usMarket" value="${esc(s.usMarket || 'CN US')}" placeholder="CN US">
+    <label>US fee types shown as separate tiles (exact last segment of Position Path, comma-separated)</label>
+    <input type="text" id="usFees" value="${esc(s.usFees || '')}" placeholder="EIC or EL Talent Fee, Talent Fee, Tentpole Talent Fee">
+    <div class="hint">Lines whose Position Path starts with "${esc(s.usPrefix || 'Conde Nast')}" are the US market. US fee tiles replace the internal/external tiles when the US market is selected; any other US fee type shows as "Other US fee".</div>
+    </details>
+    `}
+    <details class="adv"><summary>Labels &amp; numbers</summary>
+    <label>Lines with no Agency Name</label>
+    <input type="text" id="blankAgency" value="${esc(s.blankAgency || 'Booked direct')}" placeholder="Booked direct">
+    <label>Lines with no (Drop) SSG Platform</label>
+    <input type="text" id="blankPlatform" value="${esc(s.blankPlatform || 'Business Services')}" placeholder="Business Services">
+    <div class="hint">Applied on import so every view, the sheet, the Excel download and the email use the same label.</div>
+
+    <label>Number format</label>
+    <select id="numberFormat">
+      <option value="0"${s.numberFormat==='0'?' selected':''}>12346 — plain, no separators</option>
+      <option value="#,##0"${s.numberFormat==='#,##0'?' selected':''}>12,346 — thousands separator</option>
+      <option value="#,##0.00"${s.numberFormat==='#,##0.00'?' selected':''}>12,345.67 — with decimals</option>
+    </select>
+    <label>Billing Status values that count as billed (comma-separated)</label>
+    <input type="text" id="billedStatus" value="${esc(s.billedStatus || 'Complete')}" placeholder="Complete">
+    <div class="hint">"Billed revenue" = the Adjusted Billable Revenue of lines whose Billing Status matches one of these (case-insensitive).</div>
+    <label>Headline KPI column (optional)</label>
+    <input type="text" id="kpi" value="${esc(s.kpi)}" placeholder="${isPrint ? 'Adjusted Earned Blended Revenue' : 'Adjusted Blended Revenue'}">
+    </details>
+    <details class="adv"><summary>Files, folders &amp; market files</summary>
+    <label>Drive folder for AdBook+ exports</label>
+    <input type="text" id="driveFolder" value="${esc(s.driveFolder)}" placeholder="Paste the folder link">
+    <label>Archive folder (optional — processed files move here)</label>
+    <input type="text" id="archiveFolder" value="${esc(s.archiveFolder)}" placeholder="Paste a folder link">
+    <div class="toggle"><input type="checkbox" id="marketFiles"${s.marketFiles?' checked':''}><label style="margin:0;color:var(--ink)">Create one Google Sheet per market on every import</label></div>
+    <label>Market files folder (optional — defaults to the exports folder)</label>
+    <input type="text" id="marketFolder" value="${esc(s.marketFolder)}" placeholder="Paste a folder link">
+    </details>
+    <details class="adv"><summary>Logo</summary>
+    <label>Logo for the web app (optional)</label>
+    <input type="file" id="logoFile" accept="image/png,image/svg+xml,image/jpeg">
+    <div class="hint">Upload the company logo (PNG/SVG, ideally white on transparent). Without one, the name is set in type. Stored inside this sheet only.</div>
+    <input type="hidden" id="logo" value="${esc(s.logo || '')}">
+    ${s.logo ? `<div class="hint">A logo is set. <button class="add" id="clearLogo">Remove</button></div>` : ''}
+    </details>
+    <details class="adv"><summary>Nightly job &amp; digest email</summary>
+    <label>Send the nightly result to (emails, comma-separated; blank = sheet owner)</label>
+    <input type="text" id="notify" value="${esc(s.notify || '')}" placeholder="you@condenast.com, colleague@condenast.com">
+    <div class="hint">After each 00:00 Berlin run you get "OK (rows · changes)", "no new file", or "FAILED: reason". Set up the job from the menu.</div>
+    <label>Digest recipients — daily changes email (emails, comma-separated)</label>
+    <input type="text" id="digest" value="${esc(s.digest || '')}" placeholder="leader@condenast.com, finance@condenast.com">
+    <div class="hint">Stakeholders get the daily report by email after each successful nightly import, or from the menu on demand.</div>
+    <label>Digest detail</label>
+    <select id="digestMode">
+      <option value="summary"${(s.digestMode||'summary')==='summary'?' selected':''}>Summary — executive summary, key figures, markets, changes (recommended)</option>
+      <option value="full"${s.digestMode==='full'?' selected':''}>Full — also months, fee types, niches, clients (long; auto-falls back if too large for Gmail)</option>
+    </select>
+    </details>
+    <details class="adv"><summary>Access — uploaders &amp; market viewers</summary>
+    <label>Who can upload reports in the web app (blank = sheet owner only)</label>
+    <input type="text" id="uploaders" value="${esc(s.uploaders)}">
+    <label>Share market files with (Region=email1,email2; Region2=email3)</label>
+    <input type="text" id="marketViewers" value="${esc(s.marketViewers)}" placeholder="CN UK=ana@x.com,luis@x.com">
+    </details>
+  `;
+  const lf = document.getElementById('logoFile');
+  lf.onchange = () => { const f = lf.files[0]; if (!f) return; if (f.size > 200 * 1024) { setStatus('Logo must be under 200 KB', true); lf.value = ''; return; }
+    const r = new FileReader(); r.onload = () => { document.getElementById('logo').value = r.result; setStatus('Logo ready — click Save.'); }; r.readAsDataURL(f); };
+  const cl = document.getElementById('clearLogo'); if (cl) cl.onclick = () => { document.getElementById('logo').value = ''; setStatus('Logo will be removed on Save.'); };
+  document.getElementById('addFx').onclick = () => {
+    const tb = document.querySelector('#fx tbody');
+    tb.insertAdjacentHTML('beforeend', `<tr><td><input type="text" data-fxcode style="width:80px" placeholder="GBP"></td><td><input type="text" data-fxrate placeholder="1.1647"></td></tr>`);
+  };
+}
+
+function collect() {
+  const v = id => { const el = document.getElementById(id); return el ? el.value : undefined; };
+  return {
+    reportingCurrency: v('reportingCurrency'), numberFormat: v('numberFormat'), kpi: v('kpi'),
+    driveFolder: v('driveFolder'), archiveFolder: v('archiveFolder'), marketFolder: v('marketFolder'),
+    marketFiles: document.getElementById('marketFiles').checked,
+    reviewers: v('reviewers'), uploaders: v('uploaders'), marketViewers: v('marketViewers'), logo: v('logo'), billedStatus: v('billedStatus'), sheetYears: v('sheetYears'), charts: v('charts'), notify: v('notify'), digest: v('digest'), digestMode: v('digestMode'), usPrefix: v('usPrefix'), usMarket: v('usMarket'), usFees: v('usFees'), blankAgency: v('blankAgency'), blankPlatform: v('blankPlatform'),
+    profileSetting: v('profileSetting'),
+    ...(document.getElementById('yieldBasis') ? { defaultIoStatus: v('defaultIoStatus'), yieldBasis: v('yieldBasis'), grossIncludesCommission: document.getElementById('grossIncludesCommission').checked, commissionMode: v('commissionMode'),
+      houseExclude: document.getElementById('houseExclude').checked, regionalProrata: document.getElementById('regionalProrata').checked, pageFactors: v('pageFactors'), insertSizes: v('insertSizes'), pageCatGroups: v('pageCatGroups'), termPattern: v('termPattern'), discountBands: v('discountBands'), policyTiers: v('policyTiers'), brandFamilies: v('brandFamilies') } : {}),
+    brandName: v('brandName'), ...(document.getElementById('creditLine') ? { creditLine: v('creditLine') } : {}),
+    regions: Array.from(document.querySelectorAll('select[data-region]')).map(s => ({ name: s.dataset.region, currency: s.value.startsWith('—') ? '' : s.value })),
+    fx: Array.from(document.querySelectorAll('#fx tbody tr')).map(tr => ({ code: tr.querySelector('[data-fxcode]').value, rate: tr.querySelector('[data-fxrate]').value })).filter(x => x.code.trim()),
+  };
+}
+
+function setStatus(msg, err) { const el = document.getElementById('status'); el.textContent = msg; el.classList.toggle('err', !!err); }
+function busy(on) { document.getElementById('save').disabled = on; document.getElementById('apply').disabled = on; }
+
+document.getElementById('save').onclick = () => { busy(true); setStatus('Saving…');
+  google.script.run.withSuccessHandler(m => { busy(false); setStatus(m); google.script.run.withSuccessHandler(render).getSettings(); })
+    .withFailureHandler(e => { busy(false); setStatus(e.message, true); }).saveSettings(collect()); };
+document.getElementById('apply').onclick = () => { busy(true); setStatus('Saving and rebuilding — this can take a minute…');
+  google.script.run.withSuccessHandler(m => { busy(false); setStatus(m); google.script.run.withSuccessHandler(render).getSettings(); })
+    .withFailureHandler(e => { busy(false); setStatus(e.message, true); }).saveSettingsAndApply(collect()); };
+
+google.script.run.withSuccessHandler(render).withFailureHandler(e => setStatus(e.message, true)).getSettings();
+</script>
+</body>
+</html>
